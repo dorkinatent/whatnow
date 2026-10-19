@@ -313,7 +313,7 @@ func (t *copilotTurn) result() string {
 func copilotError(d *copilot.SessionErrorData) error {
 	switch d.ErrorType {
 	case "authentication", "authorization":
-		return fmt.Errorf("GitHub Copilot is %w. Run `gh auth login`, or `copilot` and sign in", ErrSignedOut)
+		return fmt.Errorf("GitHub Copilot is %w. Run `gh auth login`", ErrSignedOut)
 	case "quota":
 		return errors.New("GitHub Copilot's usage limit is reached")
 	}

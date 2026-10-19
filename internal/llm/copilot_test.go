@@ -219,7 +219,7 @@ func TestCopilotErrors(t *testing.T) {
 		check  func(error) bool
 	}{
 		"signed out": {sessionError("authentication", "no token"), func(err error) bool {
-			return errors.Is(err, ErrSignedOut) && strings.Contains(err.Error(), "Run `gh auth login`")
+			return errors.Is(err, ErrSignedOut) && err.Error() == "GitHub Copilot is not signed in. Run `gh auth login`"
 		}},
 		"no access": {sessionError("authorization", "no seat"), func(err error) bool { return errors.Is(err, ErrSignedOut) }},
 		"quota":     {sessionError("quota", "out"), func(err error) bool { return err.Error() == "GitHub Copilot's usage limit is reached" }},

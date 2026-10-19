@@ -135,7 +135,7 @@ between, up to 10 rounds. Both SDKs run the loop themselves and call tools back.
   `Loop` returns `ErrTooManyRounds`.
 - **Errors:**
   - `session.error` of type `authentication` or `authorization` → "GitHub Copilot is not signed
-    in. Run `gh auth login`, or `copilot` and sign in"
+    in. Run `gh auth login`"
   - type `quota` → "GitHub Copilot's usage limit is reached"
   - any other → `copilot: <message>`
   - a runtime that can't start → `copilot: <error>`, and the next call tries again
