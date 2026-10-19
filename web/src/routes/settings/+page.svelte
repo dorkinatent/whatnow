@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { api, type ConnectionResult, type Provider, type SettingsView } from '#lib/api.ts';
+	import { api, signsIn, type ConnectionResult, type Provider, type SettingsView } from '#lib/api.ts';
 	import AboutYou from '#lib/components/AboutYou.svelte';
 	import DangerZone from '#lib/components/DangerZone.svelte';
+	import SignInNote from '#lib/components/SignInNote.svelte';
 	import NotifyPermission from '#lib/components/NotifyPermission.svelte';
 	import ThemePicker from '#lib/components/ThemePicker.svelte';
 	import { live } from '#lib/live.svelte.ts';
@@ -43,7 +44,7 @@
 		result = null;
 		view.settings.allowed_hosts = view.settings.allowed_hosts.map((h) => h.trim()).filter(Boolean);
 		try {
-			if (key.trim()) {
+			if (!signsIn(provider) && key.trim()) {
 				await api.saveKey(provider, key.trim());
 				key = '';
 			}
@@ -79,12 +80,18 @@
 				<select class="field" bind:value={view.settings.provider}>
 					<option value="anthropic">Anthropic</option>
 					<option value="openai">OpenAI-compatible</option>
+					<option value="claudecode">Claude Code (your Claude plan)</option>
+					<option value="copilot">GitHub Copilot</option>
 				</select>
 			</label>
-			<label>
-				<span class="label">API key <span class="muted">({keyNote})</span></span>
-				<input class="field" type="password" bind:value={key} autocomplete="off" placeholder="Leave blank to keep" />
-			</label>
+			{#if signsIn(provider)}
+				<SignInNote {provider} source={view.keys[provider]} />
+			{:else}
+				<label>
+					<span class="label">API key <span class="muted">({keyNote})</span></span>
+					<input class="field" type="password" bind:value={key} autocomplete="off" placeholder="Leave blank to keep" />
+				</label>
+			{/if}
 			<label>
 				<span class="label">Main model</span>
 				<input class="field" bind:value={view.settings[provider].main_model} />
