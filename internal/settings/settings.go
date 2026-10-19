@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -19,11 +20,20 @@ var ErrInvalid = errors.New("invalid settings")
 type Provider string
 
 const (
-	Anthropic Provider = "anthropic"
-	OpenAI    Provider = "openai"
+	Anthropic  Provider = "anthropic"
+	OpenAI     Provider = "openai"
+	ClaudeCode Provider = "claudecode"
+	Copilot    Provider = "copilot"
 )
 
-func (p Provider) Valid() bool { return p == Anthropic || p == OpenAI }
+// Providers is every provider, in the order settings shows them.
+var Providers = []Provider{Anthropic, OpenAI, ClaudeCode, Copilot}
+
+func (p Provider) Valid() bool { return slices.Contains(Providers, p) }
+
+// SignsIn says whether the provider runs on the user's own sign-in to its vendor's CLI. Such a
+// provider takes no key.
+func (p Provider) SignsIn() bool { return p == ClaudeCode || p == Copilot }
 
 // Theme is the web UI's look. Empty is the default sticker look.
 type Theme string
@@ -55,11 +65,13 @@ type ProviderConfig struct {
 
 type Settings struct {
 	// Provider is empty until the user sets one up.
-	Provider  Provider       `json:"provider"`
-	Anthropic ProviderConfig `json:"anthropic"`
-	OpenAI    ProviderConfig `json:"openai"`
-	Style     string         `json:"style"`
-	AboutMe   string         `json:"about_me"`
+	Provider   Provider       `json:"provider"`
+	Anthropic  ProviderConfig `json:"anthropic"`
+	OpenAI     ProviderConfig `json:"openai"`
+	ClaudeCode ProviderConfig `json:"claudecode"`
+	Copilot    ProviderConfig `json:"copilot"`
+	Style      string         `json:"style"`
+	AboutMe    string         `json:"about_me"`
 	// EndOfDay is when the working day ends, as local HH:MM. Free time is counted up to it.
 	EndOfDay string `json:"end_of_day"`
 	Nudges   Nudges `json:"nudges"`
@@ -87,11 +99,13 @@ const (
 	MaxAlertLead    = 60
 )
 
-// Defaults has Claude models filled in. OpenAI-compatible models are left for the user, since
-// they depend on the server.
+// Defaults has Claude, Claude Code and Copilot models filled in. OpenAI-compatible models are left
+// for the user, since they depend on the server.
 func Defaults() Settings {
 	return Settings{
 		Anthropic:        ProviderConfig{MainModel: "claude-sonnet-5-5", LightModel: "claude-haiku-4-5"},
+		ClaudeCode:       ProviderConfig{MainModel: "sonnet", LightModel: "haiku"},
+		Copilot:          ProviderConfig{MainModel: "claude-sonnet-4.5", LightModel: "gpt-5-mini"},
 		EndOfDay:         "17:30",
 		Nudges:           Nudges{BeforeEvent: true, EventEnd: true, LateDay: true},
 		AlertLeadMinutes: 10,
@@ -101,8 +115,13 @@ func Defaults() Settings {
 
 // Config returns the active provider's model settings.
 func (s Settings) Config() ProviderConfig {
-	if s.Provider == OpenAI {
+	switch s.Provider {
+	case OpenAI:
 		return s.OpenAI
+	case ClaudeCode:
+		return s.ClaudeCode
+	case Copilot:
+		return s.Copilot
 	}
 	return s.Anthropic
 }

@@ -3,13 +3,16 @@ package settings_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/zalando/go-keyring"
 
+	"github.com/jameynakama/whatnow/internal/llm"
 	"github.com/jameynakama/whatnow/internal/settings"
 	"github.com/jameynakama/whatnow/internal/store"
 )
@@ -77,6 +80,8 @@ func TestValidate(t *testing.T) {
 	cases := map[string]func(*settings.Settings){
 		"unknown provider":              func(s *settings.Settings) { s.Provider = "gemini" },
 		"openai without models":         func(s *settings.Settings) { s.Provider = settings.OpenAI },
+		"claude code without models":    func(s *settings.Settings) { s.Provider = settings.ClaudeCode; s.ClaudeCode = settings.ProviderConfig{} },
+		"copilot without models":        func(s *settings.Settings) { s.Provider = settings.Copilot; s.Copilot = settings.ProviderConfig{} },
 		"base URL without scheme":       func(s *settings.Settings) { s.OpenAI.BaseURL = "localhost:11434" },
 		"style over 500 characters":     func(s *settings.Settings) { s.Style = strings.Repeat("é", 501) },
 		"about me over 1000 characters": func(s *settings.Settings) { s.AboutMe = strings.Repeat("🧠", 1001) },
@@ -190,4 +195,63 @@ func TestSettingsSavedBeforeEndOfDayExistedGetTheDefault(t *testing.T) {
 	if got.EndOfDay != "17:30" || got.Style != "terse" {
 		t.Errorf("loaded %+v", got)
 	}
+}
+
+// onPath puts an executable named name in a fresh directory and makes that directory the PATH.
+func onPath(t *testing.T, name string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stubs")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+func TestSignInProvidersNeedTheirCLI(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("COPILOT_CLI_PATH", "")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+
+	for _, p := range []settings.Provider{settings.ClaudeCode, settings.Copilot} {
+		s := settings.Defaults()
+		s.Provider = p
+		if src, err := settings.Source(p); err != nil || src != "" {
+			t.Errorf("%s with no CLI: source %q, %v", p, src, err)
+		}
+		if _, _, err := settings.NewClient(s); !errors.Is(err, settings.ErrNotConfigured) {
+			t.Errorf("%s with no CLI: err = %v, want ErrNotConfigured", p, err)
+		}
+		if err := settings.SetKey(p, "k"); !errors.Is(err, settings.ErrInvalid) {
+			t.Errorf("%s took a key: %v", p, err)
+		}
+	}
+
+	onPath(t, "claude")
+	s := settings.Defaults()
+	s.Provider = settings.ClaudeCode
+	if src, _ := settings.Source(settings.ClaudeCode); src != settings.KeyFromLogin {
+		t.Errorf("claude on PATH: source %q", src)
+	}
+	client, cfg, err := settings.NewClient(s)
+	if err != nil || cfg.MainModel != "sonnet" || cfg.LightModel != "haiku" {
+		t.Fatalf("claude code: cfg %+v, err %v", cfg, err)
+	}
+	if _, ok := client.(llm.Looper); !ok {
+		t.Error("the Claude Code client doesn't run its own loop")
+	}
+
+	t.Setenv("COPILOT_CLI_PATH", "/opt/copilot/bin/copilot")
+	s.Provider = settings.Copilot
+	if src, _ := settings.Source(settings.Copilot); src != settings.KeyFromLogin {
+		t.Errorf("COPILOT_CLI_PATH set: source %q", src)
+	}
+	if _, cfg, err := settings.NewClient(s); err != nil || cfg.MainModel != "claude-sonnet-4.5" {
+		t.Errorf("copilot: cfg %+v, err %v", cfg, err)
+	}
+	settings.StopRuntimes()
 }
