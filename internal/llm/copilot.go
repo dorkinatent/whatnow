@@ -121,7 +121,7 @@ func githubToken() string {
 			return ""
 		}
 	}
-	gh, err := exec.LookPath("gh")
+	gh, err := FindCLI("gh")
 	if err != nil {
 		return ""
 	}

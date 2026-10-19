@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -91,16 +90,17 @@ func Source(p Provider) (KeySource, error) {
 	return source, err
 }
 
-// cliPath finds the CLI a sign-in provider runs: claude on PATH, or Copilot's runtime at
-// COPILOT_CLI_PATH or on PATH. The Copilot SDK does no PATH lookup itself.
+// cliPath finds the CLI a sign-in provider runs: claude, or Copilot's runtime at COPILOT_CLI_PATH
+// or found like claude. Both are looked for on PATH and then where they usually install, since a
+// service's PATH is bare. The Copilot SDK does no PATH lookup itself.
 func cliPath(p Provider) (string, error) {
 	if p == Copilot {
 		if path := os.Getenv("COPILOT_CLI_PATH"); path != "" {
 			return path, nil
 		}
-		return exec.LookPath("copilot")
+		return llm.FindCLI("copilot")
 	}
-	return exec.LookPath("claude")
+	return llm.FindCLI("claude")
 }
 
 // workDir is a sign-in provider's own empty directory, so no project's instructions apply.

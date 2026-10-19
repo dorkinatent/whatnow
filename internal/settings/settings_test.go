@@ -210,12 +210,34 @@ func onPath(t *testing.T, name string) {
 	t.Setenv("PATH", dir)
 }
 
+// A launchd service's PATH has neither ~/.local/bin nor Homebrew's, so the CLI is looked for there.
+func TestClaudeIsFoundInItsInstallDirWhenNotOnPATH(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stubs")
+	}
+	t.Setenv("PATH", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if src, err := settings.Source(settings.ClaudeCode); err != nil || src != settings.KeyFromLogin {
+		t.Errorf("claude in ~/.local/bin: source %q, %v", src, err)
+	}
+}
+
 func TestSignInProvidersNeedTheirCLI(t *testing.T) {
 	keyring.MockInit()
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("COPILOT_CLI_PATH", "")
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	t.Setenv("HOME", t.TempDir())
+	defer llm.SetFallbackDirs(t.TempDir())()
 
 	for _, p := range []settings.Provider{settings.ClaudeCode, settings.Copilot} {
 		s := settings.Defaults()
