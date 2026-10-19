@@ -188,6 +188,7 @@ func TestSettingsShowWhetherSignInCLIsAreFound(t *testing.T) {
 	keyring.MockInit()
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("COPILOT_CLI_PATH", "")
+	defer llm.SetFallbackDirs(t.TempDir())()
 	api := newAPI(t)
 
 	view := decodeAs[httpapi.SettingsView](t, api.do(http.MethodGet, "/api/v1/settings", nil))
