@@ -107,6 +107,9 @@ func TestCopilotCompleteAsksForJSONAndUnfences(t *testing.T) {
 		t.Fatalf("Complete = %q, %v", got, err)
 	}
 	cfg := rt.cfg
+	if cfg.AvailableTools == nil || len(cfg.AvailableTools) != 0 {
+		t.Errorf("available tools = %#v, want a non-nil empty list", cfg.AvailableTools)
+	}
 	if cfg.Model != "gpt-5-mini" || cfg.SystemMessage.Mode != "replace" || len(cfg.Tools) != 0 {
 		t.Errorf("config = %+v", cfg)
 	}

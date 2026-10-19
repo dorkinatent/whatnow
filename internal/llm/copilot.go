@@ -46,8 +46,16 @@ func (r *CopilotRuntime) Path() string { return r.path }
 func (r *CopilotRuntime) start(ctx context.Context) (*copilot.Client, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if r.client != nil {
-		if _, err := r.client.GetStatus(ctx); err == nil {
+		// The health check gets its own context, so a caller that gives up can't make a healthy
+		// shared runtime look dead.
+		check, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		_, err := r.client.GetStatus(check)
+		cancel()
+		if err == nil {
 			return r.client, nil
 		}
 		r.client.ForceStop()
@@ -166,6 +174,9 @@ func (c *copilotClient) Loop(ctx context.Context, req ChatRequest, maxRounds int
 		cfg.Tools = append(cfg.Tools, copilot.Tool{
 			Name: t.Name, Description: t.Description, Parameters: t.Schema, SkipPermission: true,
 			Handler: func(inv copilot.ToolInvocation) (copilot.ToolResult, error) {
+				// The limit is best-effort: the SDK may run a round's tools before its assistant
+				// message is counted, so a round past the limit can still run. The abort ends the
+				// turn either way.
 				if turn.over() {
 					return copilot.ToolResult{TextResultForLLM: "Stopped: too many rounds of tool calls.", ResultType: "failure"}, nil
 				}
@@ -191,6 +202,9 @@ func replace(system string) *copilot.SystemMessageConfig {
 // send runs one prompt in a fresh, locked-down session and waits until the model is done, it
 // fails, the turn goes past its rounds, or ctx ends. Anything but done aborts the session.
 func (c *copilotClient) send(ctx context.Context, cfg *copilot.SessionConfig, prompt string, turn *copilotTurn) (string, error) {
+	if cfg.AvailableTools == nil {
+		cfg.AvailableTools = []string{} // ModeEmpty rejects a session that doesn't say which tools it has
+	}
 	cfg.Streaming = copilot.Bool(true)
 	cfg.SkipCustomInstructions = copilot.Bool(true)
 	cfg.EnableConfigDiscovery = copilot.Bool(false)
