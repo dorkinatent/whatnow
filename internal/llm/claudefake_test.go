@@ -1,16 +1,21 @@
 package llm_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jameynakama/whatnow/internal/llm"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestMain(m *testing.M) {
@@ -103,8 +108,97 @@ func flagValue(args []string, name string) (string, bool) {
 	return args[i+1], true
 }
 
-// fakeClaudeLoop plays the stream-json scenarios. Task 4 fills it in.
-func fakeClaudeLoop(scenario string, _ []string, _ func(any), _ func(string, bool, string) map[string]any) int {
-	fmt.Fprintln(os.Stderr, "no scenario", scenario)
-	return 2
+// fakeClaudeLoop plays the stream-json scenarios.
+func fakeClaudeLoop(scenario string, args []string, emit func(any), result func(string, bool, string) map[string]any) int {
+	messageStart := func() { emit(map[string]any{"type": "stream_event", "event": map[string]any{"type": "message_start"}}) }
+	delta := func(text string) {
+		emit(map[string]any{"type": "stream_event", "parent_tool_use_id": nil, "event": map[string]any{
+			"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": text}}})
+	}
+	emit(map[string]any{"type": "system", "subtype": "init", "session_id": "s1"})
+	switch scenario {
+	case "stream":
+		messageStart()
+		delta("Hel")
+		delta("lo")
+		fmt.Println("not json: a stray warning")
+		messageStart()
+		delta("Again")
+		emit(result("success", false, "Hello\n\nAgain"))
+	case "tools":
+		messageStart()
+		delta(fakeUseTools(args))
+		emit(result("success", false, ""))
+	case "max-turns":
+		messageStart()
+		delta("Still going")
+		emit(result("error_max_turns", true, ""))
+	case "loop-hang":
+		time.Sleep(time.Minute)
+	default:
+		fmt.Fprintln(os.Stderr, "no scenario", scenario)
+		return 2
+	}
+	return 0
+}
+
+// fakeUseTools does what the CLI does with --mcp-config: connects to whatnow's server, lists its
+// tools, and calls them. It reports what happened, and first tries the server with no token.
+func fakeUseTools(args []string) string {
+	raw, _ := flagValue(args, "--mcp-config")
+	var cfg struct {
+		MCPServers map[string]struct {
+			Type    string            `json:"type"`
+			URL     string            `json:"url"`
+			Headers map[string]string `json:"headers"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return "bad config: " + err.Error()
+	}
+	srv := cfg.MCPServers["whatnow"]
+	noToken := "unreachable"
+	if resp, err := http.Post(srv.URL, "application/json", strings.NewReader("{}")); err == nil {
+		noToken = resp.Status
+		resp.Body.Close()
+	}
+	ctx := context.Background()
+	hc := &http.Client{Transport: headers(srv.Headers)}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "fake-claude", Version: "1"}, nil).
+		Connect(ctx, &mcp.StreamableClientTransport{Endpoint: srv.URL, HTTPClient: hc}, nil)
+	if err != nil {
+		return "connect: " + err.Error()
+	}
+	defer session.Close()
+	list, err := session.ListTools(ctx, nil)
+	if err != nil {
+		return "list: " + err.Error()
+	}
+	var names []string
+	for _, tool := range list.Tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+	echo, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "echo", Arguments: map[string]any{"text": "hi"}})
+	if err != nil {
+		return "echo: " + err.Error()
+	}
+	broken, err := session.CallTool(ctx, &mcp.CallToolParams{Name: "broken"})
+	if err != nil {
+		return "broken: " + err.Error()
+	}
+	return fmt.Sprintf("type %s; no token: %s; tools: %s; echo: %s; broken: %v %s", srv.Type, noToken,
+		strings.Join(names, ","), echo.Content[0].(*mcp.TextContent).Text,
+		broken.IsError, broken.Content[0].(*mcp.TextContent).Text)
+}
+
+// headers sets fixed headers on every request.
+type headers map[string]string
+
+func (h headers) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	for k, v := range h {
+		r.Header.Set(k, v)
+	}
+	return http.DefaultTransport.RoundTrip(r)
 }

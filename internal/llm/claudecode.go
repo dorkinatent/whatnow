@@ -1,14 +1,17 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -134,4 +137,79 @@ func claudeFailure(ctx context.Context, runErr error, stderr string) error {
 		return fmt.Errorf("claude code: %w", runErr)
 	}
 	return errors.New("claude code: no result")
+}
+
+// Loop runs the whole turn in one claude process, which calls the turn's tools through a
+// loopback MCP server.
+func (c *claudeCode) Loop(ctx context.Context, req ChatRequest, maxRounds int, run RunTool, onText func(string)) (string, error) {
+	tools, err := serveTools(ctx, req.Tools, run)
+	if err != nil {
+		return "", fmt.Errorf("claude code: serve tools: %w", err)
+	}
+	defer tools.Close()
+	args := append(c.args(req.Model, req.System),
+		"--output-format", "stream-json", "--verbose", "--include-partial-messages",
+		"--max-turns", strconv.Itoa(maxRounds+1),
+		"--mcp-config", tools.config(), "--allowedTools", "mcp__whatnow__*")
+	cmd := c.command(ctx, args, transcript(req.Messages))
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("claude code: %w", err)
+	}
+	text, res, readErr := readStream(out, onText)
+	waitErr := cmd.Wait()
+	switch {
+	case res != nil:
+		return text, res.err()
+	case readErr != nil && ctx.Err() == nil:
+		return text, fmt.Errorf("claude code: %w", readErr)
+	}
+	return text, claudeFailure(ctx, waitErr, stderr.String())
+}
+
+// claudeEvent is one line of stream-json. Only text deltas, message starts and the result matter.
+type claudeEvent struct {
+	claudeResult
+	Event struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"delta"`
+	} `json:"event"`
+}
+
+// readStream reads events until the result. Text deltas go to onText, with a blank line before
+// the first text of a message that follows earlier text. A line that isn't JSON is skipped.
+func readStream(r io.Reader, onText func(string)) (string, *claudeResult, error) {
+	var text strings.Builder
+	sep := false
+	lines := bufio.NewScanner(r)
+	lines.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for lines.Scan() {
+		var e claudeEvent
+		if json.Unmarshal(lines.Bytes(), &e) != nil {
+			continue
+		}
+		switch {
+		case e.Type == "result":
+			return text.String(), &e.claudeResult, nil
+		case e.Type != "stream_event":
+		case e.Event.Type == "message_start":
+			sep = text.Len() > 0
+		case e.Event.Type == "content_block_delta" && e.Event.Delta.Type == "text_delta" && e.Event.Delta.Text != "":
+			delta := e.Event.Delta.Text
+			if sep {
+				delta, sep = "\n\n"+delta, false
+			}
+			text.WriteString(delta)
+			onText(delta)
+		}
+	}
+	return text.String(), nil, lines.Err()
 }
