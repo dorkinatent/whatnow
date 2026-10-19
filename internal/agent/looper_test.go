@@ -96,3 +96,44 @@ func TestASignedOutProviderSaysSo(t *testing.T) {
 		t.Errorf("text = %q", reply.Text)
 	}
 }
+
+// lateLooper returns at once, leaving a goroutine that calls run once released, as a backend
+// does when a tool call is still in flight when the turn ends.
+type lateLooper struct {
+	model
+	release chan struct{}
+	late    chan llm.ToolResult
+}
+
+func (l *lateLooper) Loop(ctx context.Context, _ llm.ChatRequest, _ int, run llm.RunTool, _ func(string)) (string, error) {
+	go func() {
+		<-l.release
+		l.late <- run(ctx, call("late", "create_task", map[string]any{"title": "Too late", "notes": "", "size": "",
+			"energy": "", "feeling": "", "due_on": "", "not_before": ""}))
+	}()
+	return "Done.", nil
+}
+
+func TestAToolCallAfterTheTurnEndsDoesNothing(t *testing.T) {
+	f := newFixture(t)
+	l := &lateLooper{model: model{t: t}, release: make(chan struct{}), late: make(chan llm.ToolResult, 1)}
+	f.client = l
+
+	reply := f.send(t, "hi")
+	close(l.release)
+	res := <-l.late
+
+	if !res.IsError || res.CallID != "late" || res.Content != "the turn is over" {
+		t.Errorf("late result = %+v", res)
+	}
+	if len(reply.Tools) != 0 || reply.BatchID != 0 {
+		t.Errorf("reply = %+v", reply)
+	}
+	tasks, err := f.svc.ListTasks(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("the late call created %d tasks", len(tasks))
+	}
+}

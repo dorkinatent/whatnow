@@ -218,14 +218,23 @@ func (t *turn) loop(ctx context.Context, model llm.Looper, req llm.ChatRequest) 
 	ctx, cancel := context.WithTimeout(ctx, loopTimeout)
 	defer cancel()
 	var mu sync.Mutex
+	// done is set once Loop returns. A backend may still have a call in flight then, and it
+	// mustn't write a batch nobody will publish or touch the turn while Send reads it.
+	var done bool
 	run := func(ctx context.Context, c llm.ToolCall) llm.ToolResult {
 		mu.Lock()
 		defer mu.Unlock()
+		if done {
+			return llm.ToolResult{CallID: c.ID, Content: "the turn is over", IsError: true}
+		}
 		return t.runTool(ctx, c)
 	}
 	text, err := model.Loop(ctx, req, maxRounds, run, func(delta string) {
 		t.agent.hub.Publish(stream.Message{Type: "chat.delta", Data: Delta{Text: delta}})
 	})
+	mu.Lock() // waits for a call in flight
+	done = true
+	mu.Unlock()
 	if errors.Is(err, llm.ErrTooManyRounds) {
 		return joinText(text, stopped()), nil
 	}
