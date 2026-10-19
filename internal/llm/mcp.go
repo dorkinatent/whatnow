@@ -19,6 +19,7 @@ import (
 type toolServer struct {
 	url, token string
 	srv        *http.Server
+	server     *mcp.Server
 }
 
 // serveTools starts a toolServer. Each call runs through run with ctx, the turn's context, not
@@ -41,7 +42,7 @@ func serveTools(ctx context.Context, tools []Tool, run RunTool) (*toolServer, er
 	if err != nil {
 		return nil, err
 	}
-	ts := &toolServer{url: "http://" + ln.Addr().String() + "/mcp", token: rand.Text()}
+	ts := &toolServer{url: "http://" + ln.Addr().String() + "/mcp", token: rand.Text(), server: server}
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	ts.srv = &http.Server{
 		ReadHeaderTimeout: 10 * time.Second,
@@ -57,7 +58,14 @@ func serveTools(ctx context.Context, tools []Tool, run RunTool) (*toolServer, er
 	return ts, nil
 }
 
-func (ts *toolServer) Close() error { return ts.srv.Close() }
+// Close stops the server and ends its sessions. Closing the listener doesn't, and a killed CLI
+// never says goodbye, so each would otherwise keep its goroutines and the turn's tools for good.
+func (ts *toolServer) Close() error {
+	for ss := range ts.server.Sessions() {
+		ss.Close()
+	}
+	return ts.srv.Close()
+}
 
 // config is the CLI's --mcp-config: this server, named whatnow, so its tools are mcp__whatnow__*.
 func (ts *toolServer) config() string {
