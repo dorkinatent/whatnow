@@ -165,7 +165,13 @@ func (c *claudeCode) Loop(ctx context.Context, req ChatRequest, maxRounds int, r
 	waitErr := cmd.Wait()
 	switch {
 	case res != nil:
-		return text, res.err()
+		err := res.err()
+		// A reply that streamed nothing still has its text in the result.
+		if err == nil && text == "" && res.Result != "" {
+			text = res.Result
+			onText(text)
+		}
+		return text, err
 	case readErr != nil && ctx.Err() == nil:
 		return text, fmt.Errorf("claude code: %w", readErr)
 	}

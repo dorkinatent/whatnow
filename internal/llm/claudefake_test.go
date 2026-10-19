@@ -129,6 +129,9 @@ func fakeClaudeLoop(scenario string, args []string, emit func(any), result func(
 		messageStart()
 		delta(fakeUseTools(args))
 		emit(result("success", false, ""))
+	case "result-only":
+		messageStart()
+		emit(result("success", false, "Just this"))
 	case "max-turns":
 		messageStart()
 		delta("Still going")

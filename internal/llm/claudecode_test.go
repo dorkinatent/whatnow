@@ -200,6 +200,18 @@ func TestClaudeCodeLoopServesToolsOverMCP(t *testing.T) {
 	}
 }
 
+func TestClaudeCodeLoopFallsBackToTheResultText(t *testing.T) {
+	client, _, _ := fakeClaudeCode(t, "result-only")
+	var streamed []string
+
+	got, err := looperOf(t, client).Loop(context.Background(), llm.ChatRequest{Model: "sonnet",
+		Messages: []llm.Message{{Role: llm.RoleUser, Text: "go"}}}, 10, nil, func(d string) { streamed = append(streamed, d) })
+
+	if err != nil || got != "Just this" || !slices.Equal(streamed, []string{"Just this"}) {
+		t.Errorf("Loop = %q, %v; streamed %q", got, err, streamed)
+	}
+}
+
 func TestClaudeCodeLoopPastMaxTurnsKeepsItsText(t *testing.T) {
 	client, _, _ := fakeClaudeCode(t, "max-turns")
 
