@@ -75,6 +75,38 @@ func (m *model) Complete(_ context.Context, req llm.Request) (string, error) {
 	return string(b), nil
 }
 
+// looper is a fake backend that runs the tool loop itself. Each round's calls run at once, as
+// Copilot runs them; then it says its text and returns its error. It records what it was asked.
+type looper struct {
+	model
+	rounds  [][]llm.ToolCall
+	say     string
+	err     error
+	req     llm.ChatRequest
+	max     int
+	results [][]llm.ToolResult
+}
+
+func (l *looper) Loop(ctx context.Context, req llm.ChatRequest, maxRounds int, run llm.RunTool, onText func(string)) (string, error) {
+	l.req, l.max = req, maxRounds
+	for i, round := range l.rounds {
+		if i == maxRounds {
+			return "", llm.ErrTooManyRounds
+		}
+		results := make([]llm.ToolResult, len(round))
+		var wg sync.WaitGroup
+		for j, c := range round {
+			wg.Go(func() { results[j] = run(ctx, c) })
+		}
+		wg.Wait()
+		l.results = append(l.results, results)
+	}
+	if l.say != "" {
+		onText(l.say)
+	}
+	return l.say, l.err
+}
+
 type fixture struct {
 	svc   *service.Service
 	hub   *stream.Hub

@@ -35,6 +35,9 @@ const (
 // callTimeout bounds one model call, so a hung provider can't hold the chat forever.
 var callTimeout = 2 * time.Minute
 
+// loopTimeout bounds a whole turn on a backend that runs the tool loop itself.
+var loopTimeout = 5 * time.Minute
+
 type Agent struct {
 	svc     *service.Service
 	hub     *stream.Hub
@@ -121,6 +124,8 @@ func errorText(err error) string {
 	switch {
 	case errors.Is(err, settings.ErrNotConfigured):
 		return "No AI provider is set up yet, so I can't chat. Add one in settings."
+	case errors.Is(err, llm.ErrSignedOut):
+		return "The AI provider isn't signed in, so I can't chat. Check settings."
 	case errors.Is(err, llm.ErrRefused):
 		return "The model declined to answer that."
 	case errors.Is(err, llm.ErrTruncated):
@@ -170,6 +175,9 @@ func (t *turn) run(ctx context.Context, date domain.Date) (string, error) {
 		MaxTokens: maxTokens,
 		Fallback:  true,
 	}
+	if looper, ok := sit.Model.(llm.Looper); ok {
+		return t.loop(ctx, looper, req)
+	}
 
 	var text string
 	for round := 0; ; round++ {
@@ -188,7 +196,7 @@ func (t *turn) run(ctx context.Context, date domain.Date) (string, error) {
 			return text, nil
 		}
 		if round == maxRounds {
-			return joinText(text, fmt.Sprintf("(I stopped after %d rounds of changes. Ask me to keep going if there's more.)", maxRounds)), nil
+			return joinText(text, stopped()), nil
 		}
 		results := make([]llm.ToolResult, len(reply.ToolCalls))
 		for i, c := range reply.ToolCalls {
@@ -198,6 +206,30 @@ func (t *turn) run(ctx context.Context, date domain.Date) (string, error) {
 			llm.Message{Role: llm.RoleAssistant, Text: reply.Text, ToolCalls: reply.ToolCalls},
 			llm.Message{Role: llm.RoleUser, ToolResults: results})
 	}
+}
+
+func stopped() string {
+	return fmt.Sprintf("(I stopped after %d rounds of changes. Ask me to keep going if there's more.)", maxRounds)
+}
+
+// loop hands the whole turn to a backend that runs tools itself. Its tool calls may arrive at
+// once, but a turn's writes share one batch, so they run one at a time.
+func (t *turn) loop(ctx context.Context, model llm.Looper, req llm.ChatRequest) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, loopTimeout)
+	defer cancel()
+	var mu sync.Mutex
+	run := func(ctx context.Context, c llm.ToolCall) llm.ToolResult {
+		mu.Lock()
+		defer mu.Unlock()
+		return t.runTool(ctx, c)
+	}
+	text, err := model.Loop(ctx, req, maxRounds, run, func(delta string) {
+		t.agent.hub.Publish(stream.Message{Type: "chat.delta", Data: Delta{Text: delta}})
+	})
+	if errors.Is(err, llm.ErrTooManyRounds) {
+		return joinText(text, stopped()), nil
+	}
+	return text, err
 }
 
 func (t *turn) call(ctx context.Context, model llm.Client, req llm.ChatRequest, onText func(string)) (llm.Reply, error) {
