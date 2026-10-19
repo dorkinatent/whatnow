@@ -176,3 +176,17 @@ between, up to 10 rounds. Both SDKs run the loop themselves and call tools back.
 - Embedding the Copilot runtime in the binary.
 - Long-lived `claude` processes. The per-call spawn costs about a second; revisit if it shows.
 - Prompt caching, refusal fallback and token limits on these providers.
+
+## Checked on 2026-10-19
+
+- claude 2.1.303, signed in (claude.ai, Max): every flag accepted as listed; `--setting-sources ""`
+  accepted. A Complete call returns a `result` with `subtype` `success` and `result` `ok`; with
+  `--json-schema` it returns `structured_output` `{"tier":"must"}`.
+- stream-json with `--verbose --include-partial-messages`: `system`/`init` (tools `[]`, no MCP
+  servers), then `stream_event`s `message_start`, `content_block_start`, `content_block_delta`
+  (`text_delta`), `content_block_stop`, `message_delta`, `message_stop`, with an `assistant` and a
+  `rate_limit_event` between, and a final `result`. `parent_tool_use_id` is `null`.
+- Signed out (a fresh `CLAUDE_CONFIG_DIR`): `result` with `subtype` `success`, `is_error` `true`,
+  `result` "Not logged in · Please run /login".
+- Copilot CLI: not installed or checked; the user didn't approve installing it or Copilot calls.
+  The Copilot default models and the install command are unverified.
