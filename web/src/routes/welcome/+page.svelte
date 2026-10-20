@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { api, type ConnectionResult, type Integration, type Provider, type SettingsView } from '#lib/api.ts';
+	import { api, signsIn, type ConnectionResult, type Integration, type Provider, type SettingsView } from '#lib/api.ts';
 	import AboutYou from '#lib/components/AboutYou.svelte';
 	import Dots from '#lib/components/Dots.svelte';
 	import IntegrationCard from '#lib/components/IntegrationCard.svelte';
+	import SignInNote from '#lib/components/SignInNote.svelte';
 	import NotifyPermission from '#lib/components/NotifyPermission.svelte';
 	import { live } from '#lib/live.svelte.ts';
 	import { toasts } from '#lib/toasts.svelte.ts';
@@ -41,7 +42,11 @@
 	const modelsSet = $derived(
 		!!view?.settings[provider].main_model.trim() && !!view?.settings[provider].light_model.trim()
 	);
-	const keyReady = $derived(fromEnv || key.trim() !== '' || view?.keys[provider] === 'keychain');
+	const keyReady = $derived(
+		signsIn(provider)
+			? view?.keys[provider] === 'login'
+			: fromEnv || key.trim() !== '' || view?.keys[provider] === 'keychain'
+	);
 
 	/** Saves the form's settings. Returns whether it worked. */
 	async function save(): Promise<boolean> {
@@ -59,7 +64,7 @@
 	async function saveKey() {
 		busy = true;
 		try {
-			if (!fromEnv && key.trim()) {
+			if (!signsIn(provider) && !fromEnv && key.trim()) {
 				await api.saveKey(provider, key.trim());
 				key = '';
 			}
@@ -135,6 +140,22 @@
 						<strong>OpenAI-compatible</strong>
 						<span class="muted">OpenAI, Ollama, OpenRouter, and others</span>
 					</button>
+					<button
+						class="sticker choice"
+						class:on={provider === 'claudecode'}
+						onclick={() => view && (view.settings.provider = 'claudecode')}
+					>
+						<strong>Claude Code</strong>
+						<span class="muted">Your Claude plan, through the claude you're signed in to</span>
+					</button>
+					<button
+						class="sticker choice"
+						class:on={provider === 'copilot'}
+						onclick={() => view && (view.settings.provider = 'copilot')}
+					>
+						<strong>GitHub Copilot</strong>
+						<span class="muted">Your Copilot plan, through the Copilot CLI</span>
+					</button>
 				</div>
 				{#if provider === 'openai'}
 					<label>
@@ -151,20 +172,25 @@
 					<input class="field" bind:value={view.settings[provider].light_model} />
 				</label>
 			{:else if step === 'key'}
-				<h1>Your API key</h1>
-				{#if fromEnv}
-					<p>Found your key in <code>{envVar}</code>.</p>
-					<button class="link" onclick={() => (ownKey = true)}>Use a different key</button>
+				{#if signsIn(provider)}
+					<h1>Your sign-in</h1>
+					<SignInNote {provider} source={view.keys[provider]} />
 				{:else}
-					<p>It stays in your system keychain, never in whatnow's database.</p>
-					<input
-						class="field"
-						type="password"
-						bind:value={key}
-						autocomplete="off"
-						aria-label="API key"
-						placeholder={view.keys[provider] === 'keychain' ? 'Saved. Leave blank to keep' : ''}
-					/>
+					<h1>Your API key</h1>
+					{#if fromEnv}
+						<p>Found your key in <code>{envVar}</code>.</p>
+						<button class="link" onclick={() => (ownKey = true)}>Use a different key</button>
+					{:else}
+						<p>It stays in your system keychain, never in whatnow's database.</p>
+						<input
+							class="field"
+							type="password"
+							bind:value={key}
+							autocomplete="off"
+							aria-label="API key"
+							placeholder={view.keys[provider] === 'keychain' ? 'Saved. Leave blank to keep' : ''}
+						/>
+					{/if}
 				{/if}
 			{:else if step === 'test'}
 				<h1>Checking the connection</h1>

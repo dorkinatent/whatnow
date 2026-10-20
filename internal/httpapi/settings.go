@@ -13,8 +13,9 @@ import (
 	"github.com/jameynakama/whatnow/internal/stream"
 )
 
-// SettingsView is what the settings screen gets: the settings, and where each provider's key
-// comes from. Keys themselves never leave the server.
+// SettingsView is what the settings screen gets: the settings, and where each provider's
+// access comes from: a key's source, or `login` for a provider whose CLI is found. Keys themselves
+// never leave the server.
 type SettingsView struct {
 	Settings settings.Settings                        `json:"settings"`
 	Keys     map[settings.Provider]settings.KeySource `json:"keys"`
@@ -27,8 +28,8 @@ func (s *Server) settingsView(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := SettingsView{Settings: saved, Keys: map[settings.Provider]settings.KeySource{}}
-	for _, p := range []settings.Provider{settings.Anthropic, settings.OpenAI} {
-		_, source, err := settings.Key(p)
+	for _, p := range settings.Providers {
+		source, err := settings.Source(p)
 		if err != nil {
 			writeError(w, err)
 			return

@@ -21,6 +21,7 @@ class Whatnow < Formula
   service do
     run [opt_bin/"whatnow", "serve"]
     keep_alive true
+    environment_variables PATH: std_service_path_env
     log_path var/"log/whatnow.log"
     error_log_path var/"log/whatnow.log"
   end

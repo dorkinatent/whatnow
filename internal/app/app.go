@@ -116,5 +116,6 @@ func Open(o Options) (*App, error) {
 func (a *App) Close() error {
 	a.stop()
 	a.running.Wait()
+	settings.StopRuntimes()
 	return a.DB.Close()
 }

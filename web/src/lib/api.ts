@@ -5,9 +5,14 @@ export type Energy = 'low' | 'med' | 'high';
 export type Status = 'open' | 'done' | 'dropped';
 export type Tier = 'must' | 'should' | 'could';
 export type Source = 'user' | 'chat' | 'cleanup' | 'triage';
-export type Provider = 'anthropic' | 'openai';
-/** Where a provider's key comes from. Empty means there is none. */
-export type KeySource = '' | 'keychain' | 'env';
+export type Provider = 'anthropic' | 'openai' | 'claudecode' | 'copilot';
+/** Where a provider's access comes from. Empty means there is none; login means its CLI was found. */
+export type KeySource = '' | 'keychain' | 'env' | 'login';
+
+/** Whether a provider runs on the user's own sign-in to its vendor's CLI, and takes no key. */
+export function signsIn(p: Provider): boolean {
+	return p === 'claudecode' || p === 'copilot';
+}
 
 /** A link or key pulled out of a task's text. */
 export interface Ref {
@@ -169,6 +174,8 @@ export interface Settings {
 	provider: Provider | '';
 	anthropic: ProviderConfig;
 	openai: ProviderConfig;
+	claudecode: ProviderConfig;
+	copilot: ProviderConfig;
 	style: string;
 	about_me: string;
 	end_of_day: string;

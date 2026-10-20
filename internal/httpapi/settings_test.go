@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -180,4 +182,32 @@ func TestDeleteEverythingWithoutAKeychain(t *testing.T) {
 	default:
 		t.Error("data.reset wasn't published")
 	}
+}
+
+func TestSettingsShowWhetherSignInCLIsAreFound(t *testing.T) {
+	keyring.MockInit()
+	t.Setenv("PATH", t.TempDir())
+	t.Setenv("COPILOT_CLI_PATH", "")
+	defer llm.SetFallbackDirs(t.TempDir())()
+	api := newAPI(t)
+
+	view := decodeAs[httpapi.SettingsView](t, api.do(http.MethodGet, "/api/v1/settings", nil))
+	if src, ok := view.Keys[settings.ClaudeCode]; !ok || src != "" {
+		t.Errorf("no claude: keys = %+v", view.Keys)
+	}
+	if view.Settings.ClaudeCode.MainModel != "sonnet" {
+		t.Errorf("claude code models = %+v", view.Settings.ClaudeCode)
+	}
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "claude"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	t.Setenv("COPILOT_CLI_PATH", "/opt/copilot/bin/copilot")
+	view = decodeAs[httpapi.SettingsView](t, api.do(http.MethodGet, "/api/v1/settings", nil))
+	if view.Keys[settings.ClaudeCode] != settings.KeyFromLogin || view.Keys[settings.Copilot] != settings.KeyFromLogin {
+		t.Errorf("CLIs found: keys = %+v", view.Keys)
+	}
+	wantStatus(t, api.do(http.MethodPut, "/api/v1/settings/keys/claudecode", map[string]string{"key": "k"}), http.StatusBadRequest)
 }

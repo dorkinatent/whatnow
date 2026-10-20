@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, api, configured, type SettingsView } from './api';
+import { ApiError, api, configured, signsIn, type KeySource, type Provider, type SettingsView } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -27,11 +27,13 @@ describe('api', () => {
 });
 
 describe('configured', () => {
-	const view = (provider: '' | 'anthropic', key: '' | 'env'): SettingsView => ({
+	const view = (provider: '' | Provider, key: KeySource): SettingsView => ({
 		settings: {
 			provider,
 			anthropic: { main_model: '', light_model: '', base_url: '' },
 			openai: { main_model: '', light_model: '', base_url: '' },
+			claudecode: { main_model: 'sonnet', light_model: 'haiku', base_url: '' },
+			copilot: { main_model: 'claude-sonnet-4.5', light_model: 'gpt-5-mini', base_url: '' },
 			style: '',
 			about_me: '',
 			end_of_day: '17:30',
@@ -41,14 +43,27 @@ describe('configured', () => {
 			onboarded: true,
 			allowed_hosts: []
 		},
-		keys: { anthropic: key, openai: '' }
+		keys: { anthropic: '', openai: '', claudecode: '', copilot: '', ...(provider ? { [provider]: key } : {}) }
 	});
 
 	it.each([
 		['no provider', false, view('', 'env')],
 		['a provider with no key', false, view('anthropic', '')],
-		['a provider with a key', true, view('anthropic', 'env')]
+		['a provider with a key', true, view('anthropic', 'env')],
+		['a sign-in provider whose CLI is found', true, view('claudecode', 'login')],
+		['a sign-in provider whose CLI is missing', false, view('copilot', '')]
 	])('Should count %s as set up: %s', (_, want, v) => {
 		expect(configured(v)).toBe(want);
+	});
+});
+
+describe('signsIn', () => {
+	it.each([
+		['anthropic', false],
+		['openai', false],
+		['claudecode', true],
+		['copilot', true]
+	] as const)('Should say whether %s signs in through its CLI', (p, want) => {
+		expect(signsIn(p)).toBe(want);
 	});
 });

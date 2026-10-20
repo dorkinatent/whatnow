@@ -11,6 +11,8 @@ const settings = (over: Partial<Settings> = {}): Settings => ({
 	provider: 'openai',
 	anthropic: { main_model: '', light_model: '', base_url: '' },
 	openai: { main_model: '', light_model: '', base_url: '' },
+	claudecode: { main_model: 'sonnet', light_model: 'haiku', base_url: '' },
+	copilot: { main_model: 'claude-sonnet-4.5', light_model: 'gpt-5-mini', base_url: '' },
 	style: '',
 	about_me: '',
 	end_of_day: '17:30',

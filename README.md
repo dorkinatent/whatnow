@@ -50,8 +50,8 @@ set to "focus peaks before lunch, cooked after 3pm, meetings drain me".
 
 ## Install
 
-You'll need an API key for Anthropic, OpenAI, or an OpenAI-compatible provider to run it (see
-[Models](#models)).
+You'll need an API key for Anthropic, OpenAI, or an OpenAI-compatible provider, or a signed-in Claude
+Code or GitHub Copilot, to run it (see [Models](#models)).
 
 On a Mac, with [Homebrew](https://brew.sh):
 
@@ -84,12 +84,18 @@ just install   # builds the web UI and puts whatnow in your GOBIN
 
 ## Models
 
-whatnow works with Anthropic (the default) or any OpenAI-compatible API, such as OpenAI,
-OpenRouter, Ollama, or LM Studio. Set it up on the first run, or later in settings. Keys are
-stored in your OS keychain, never in the database. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the
-environment works too.
+whatnow works with Anthropic (the default), any OpenAI-compatible API (OpenAI, OpenRouter, Ollama,
+LM Studio), or a plan you already have:
 
-Consumer subscriptions (Claude Pro or Max, ChatGPT plans) can't power whatnow. It needs an API key.
+- **Claude Code** runs on your Claude plan through the `claude` CLI you're signed in to. whatnow
+  starts it with no tools of its own, none of your settings, and nothing saved, and hands it
+  only whatnow's planner tools. This is for your own use on your own machine: Anthropic doesn't
+  allow third-party apps to offer Claude plan sign-in to other people.
+- **GitHub Copilot** runs on your Copilot plan through the Copilot CLI (`brew install
+  copilot-cli`), signed in with `gh auth login`. Each message counts toward your Copilot usage.
+
+Set it up on the first run, or later in settings. API keys are stored in your OS keychain, never in
+the database. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` in the environment works too.
 
 ## Usage
 

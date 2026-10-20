@@ -12,6 +12,10 @@ var (
 	ErrRefused = errors.New("model declined the request")
 	// ErrTruncated means the reply hit the token limit before it finished.
 	ErrTruncated = errors.New("model reply was cut off")
+	// ErrTooManyRounds means a Looper's model kept calling tools past the round limit.
+	ErrTooManyRounds = errors.New("model kept calling tools past the round limit")
+	// ErrSignedOut means a provider that runs on the user's own sign-in isn't signed in.
+	ErrSignedOut = errors.New("not signed in")
 )
 
 // Client calls one provider. The Claude API and OpenAI-compatible APIs implement it.
@@ -96,4 +100,15 @@ type ChatRequest struct {
 type Reply struct {
 	Text      string
 	ToolCalls []ToolCall
+}
+
+// RunTool runs one tool call and answers it. A Looper may call it from several goroutines.
+type RunTool func(ctx context.Context, c ToolCall) ToolResult
+
+// Looper is a Client whose backend runs the tool loop itself, as agent SDKs do. Loop sends the
+// conversation and runs the model's tool calls through run, for up to maxRounds rounds, until the
+// model stops. It streams text to onText, with a blank line between separate model messages, and
+// returns all of it, even alongside an error.
+type Looper interface {
+	Loop(ctx context.Context, req ChatRequest, maxRounds int, run RunTool, onText func(string)) (string, error)
 }
